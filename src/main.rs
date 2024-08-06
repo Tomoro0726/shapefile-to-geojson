@@ -1,12 +1,16 @@
 use geojson::{Feature, Geometry, Value as GeoJsonValue};
 use serde_json::{json, Map};
 use shapefile::{Point, PolygonRing, Reader, Shape};
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let path = std::path::Path::new("data/polygon/polygon.shp");
-  let mut reader = Reader::from_path(path)?;
+  let base_path = Path::new("data/polygon/polygon");
+  let shp_path = base_path.with_extension("shp");
+  let dbf_path = base_path.with_extension("dbf");
+  let mut shp_reader = Reader::from_path(shp_path)?;
+  let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
 
-  for shape_record in reader.iter_shapes_and_records() {
+  for shape_record in shp_reader.iter_shapes_and_records() {
     let (shape, _) = shape_record?;
 
     let geojson = match shape {

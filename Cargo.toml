@@ -7,3 +7,4 @@ edition = "2021"
 shapefile = {version = "0.6.0", features = ["geo-types"]}
 geojson = "0.24.0"
 serde_json = "1.0"
+dbase = "0.5.0"
