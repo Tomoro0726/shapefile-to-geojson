@@ -24,6 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   //iterを定義
   let mut shp_iter = shp_reader.iter_shapes_and_records();
   let mut dbf_iter = dbf_reader.iter_records();
+  Ok(())
 }
 
 fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
