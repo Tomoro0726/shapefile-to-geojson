@@ -184,6 +184,7 @@ name = "shapefile-to-geojson"
 version = "0.1.0"
 dependencies = [
  "dbase",
+ "geo-types",
  "geojson",
  "serde_json",
  "shapefile",

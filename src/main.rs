@@ -21,23 +21,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       shp_count
     );
   }
-
-  for shape_record in shp_reader.iter_shapes_and_records() {
-    let (shape, _) = shape_record?;
-    let geojson = match shape {
-      Shape::Polygon(_) => process_polygon(&shape)?,
-      Shape::Polyline(_) => process_polyline(&shape)?,
-      Shape::Point(_) => process_point(&shape)?,
-      _ => {
-        println!("Unsupported shape type");
-        continue;
-      }
-    };
-
-    println!("GeoJSON:\n{}", geojson);
-  }
-
-  Ok(())
+  //iterを定義
+  let mut shp_iter = shp_reader.iter_shapes_and_records();
+  let mut dbf_iter = dbf_reader.iter_records();
 }
 
 fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
