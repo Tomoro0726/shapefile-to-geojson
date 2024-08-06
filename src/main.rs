@@ -10,9 +10,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut shp_reader = Reader::from_path(shp_path)?;
   let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
 
+  let shp_count = shp_reader.iter_shapes_and_records().count();
+  let dbf_count = dbf_reader.iter_records().count();
+
+  if shp_count != dbf_count {
+    println!("Warning: SHP data ({} records) and DBF data ({} records) have different numbers of elements.", shp_count, dbf_count);
+  } else {
+    println!(
+      "SHP and DBF data have the same number of elements: {} records",
+      shp_count
+    );
+  }
+
   for shape_record in shp_reader.iter_shapes_and_records() {
     let (shape, _) = shape_record?;
-
     let geojson = match shape {
       Shape::Polygon(_) => process_polygon(&shape)?,
       Shape::Polyline(_) => process_polyline(&shape)?,
