@@ -1,0 +1,12 @@
+[package]
+name = "shapefile-to-geojson"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+shapefile = {version = "0.6.0", features = ["geo-types"]}
+geo = "0.18.0"
+dbase = "0.5.0"
+byteorder = "1.5.0"
+geojson="*"
+geo-types="*"
