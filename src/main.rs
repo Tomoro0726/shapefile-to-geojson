@@ -1,25 +1,53 @@
-use geojson::{Feature, FeatureCollection, Geometry, Value as GeoJsonValue};
+use futures::stream::{self, StreamExt};
+use geojson::{Feature, FeatureCollection};
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
-use serde_json::{json, Map};
-use shapefile::{Point, PolygonRing, Reader, Shape};
+use serde_json::json;
+use shapefile::{PolygonRing, Reader, Shape};
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let base_path = Path::new("data/line/line");
+#[derive(Debug)]
+struct CustomError(String);
+
+impl fmt::Display for CustomError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}", self.0)
+  }
+}
+
+impl std::error::Error for CustomError {}
+
+impl From<serde_json::Error> for CustomError {
+  fn from(err: serde_json::Error) -> Self {
+    CustomError(err.to_string())
+  }
+}
+
+impl From<std::io::Error> for CustomError {
+  fn from(err: std::io::Error) -> Self {
+    CustomError(err.to_string())
+  }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+  let base_path = Path::new("data/polygon/polygon");
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
   let mut shp_reader = Reader::from_path(shp_path.clone())?;
   let mut all_count: u64 = 0;
   {
-    let mut shp_reader = Reader::from_path(shp_path)?;
-    let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
+    let mut shp_reader = Reader::from_path(&shp_path)?;
+    let mut dbf_reader = dbase::Reader::from_path(&dbf_path)?;
     let shp_count = &shp_reader.iter_shapes_and_records().count();
     let dbf_count = &dbf_reader.iter_records().count();
 
-    all_count = shp_count.clone() as u64;
+    all_count = *shp_count as u64;
 
     if shp_count != dbf_count {
       println!("Warning: SHP data ({} records) and DBF data ({} records) have different numbers of elements.", shp_count, dbf_count);
@@ -30,67 +58,82 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       );
     }
   }
-  let mut features = Vec::new();
 
-  //ステータスバー
+  let features = Arc::new(Mutex::new(Vec::new()));
+
   let pb = ProgressBar::new(all_count);
   pb.set_style(
     ProgressStyle::default_bar()
-      .template("{spinner:.green} [{bar:40.cyan/blue}] {msg}")? //記号や文字の色を変えるよ！
+      .template("{spinner:.green} [{bar:40.cyan/blue}] {msg}")?
       .progress_chars("█▓▒░"),
-  ); //好みに変更してね！2つ以上の文字を入れてね
+  );
   pb.set_message("進行中...");
-  for shape_record in shp_reader.iter_shapes_and_records() {
-    let (shape, record) = shape_record?;
-    let geojson_string = match shape {
-      Shape::Polygon(_) => process_polygon(&shape)?,
-      Shape::Polyline(_) => process_polyline(&shape)?,
-      Shape::Point(_) => process_point(&shape)?,
-      _ => continue, // Skip unsupported shapes
-    };
 
-    let mut feature: Feature = serde_json::from_str(&geojson_string)?;
+  let shape_records: Vec<_> = shp_reader.iter_shapes_and_records().collect();
 
-    // Add properties from the DBF record
-    if let Some(props) = &mut feature.properties {
-      for (field, value) in record.into_iter() {
-        let re_numeric = Regex::new(r"^Numeric").unwrap();
-        let re_character = Regex::new(r#"^Character\(Some\("(.+)"\)\)"#).unwrap();
+  let tasks = stream::iter(shape_records)
+    .map(|shape_record| {
+      let features = Arc::clone(&features);
+      let pb = pb.clone();
 
-        if re_numeric.is_match(&value.to_string()) {
-          let numeric_string = remove_non_numeric(&value.to_string());
-          if let Ok(number) = numeric_string.parse::<f64>() {
-            props.insert(field.to_string(), json!(number));
-          } else {
-            props.insert(field.to_string(), json!(numeric_string));
+      tokio::spawn(async move {
+        let (shape, record) = shape_record?;
+        let geojson_string = match shape {
+          Shape::Polygon(_) => process_polygon(&shape)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?,
+          Shape::Polyline(_) => process_polyline(&shape)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?,
+          Shape::Point(_) => process_point(&shape)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?,
+          _ => return Ok(()), // Skip unsupported shapes
+        };
+
+        let mut feature: Feature = serde_json::from_str(&geojson_string)?;
+
+        if let Some(props) = &mut feature.properties {
+          for (field, value) in record.into_iter() {
+            let re_numeric = Regex::new(r"^Numeric").unwrap();
+            let re_character = Regex::new(r#"^Character\(Some\("(.+)"\)\)"#).unwrap();
+
+            if re_numeric.is_match(&value.to_string()) {
+              let numeric_string = remove_non_numeric(&value.to_string());
+              if let Ok(number) = numeric_string.parse::<f64>() {
+                props.insert(field.to_string(), json!(number));
+              } else {
+                props.insert(field.to_string(), json!(numeric_string));
+              }
+            } else if let Some(captures) = re_character.captures(&value.to_string()) {
+              if let Some(inner_value) = captures.get(1) {
+                props.insert(field.to_string(), json!(inner_value.as_str()));
+              } else {
+                props.insert(field.to_string(), json!(value.to_string()));
+              }
+            } else {
+              props.insert(field.to_string(), json!(value.to_string()));
+            }
           }
-        } else if let Some(captures) = re_character.captures(&value.to_string()) {
-          if let Some(inner_value) = captures.get(1) {
-            props.insert(field.to_string(), json!(inner_value.as_str()));
-          } else {
-            props.insert(field.to_string(), json!(value.to_string()));
-          }
-        } else {
-          props.insert(field.to_string(), json!(value.to_string()));
         }
-      }
-    }
-    features.push(feature);
 
-    pb.inc(1);
-  }
+        features.lock().await.push(feature);
+        pb.inc(1);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+      })
+    })
+    .buffer_unordered(num_cpus::get());
+
+  tasks.for_each(|_| async {}).await;
+
   println!("完了");
   pb.finish_with_message("完了");
 
   let feature_collection = FeatureCollection {
     bbox: None,
-    features,
+    features: features.lock().await.clone(),
     foreign_members: None,
   };
 
   let geojson_output = serde_json::to_string_pretty(&feature_collection)?;
 
-  // Write the GeoJSON to a file
   let mut file = File::create("output.geojson")?;
   file.write_all(geojson_output.as_bytes())?;
 
@@ -99,10 +142,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }
 
-fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
+fn process_polygon(shape: &Shape) -> Result<String, CustomError> {
   let polygon = match shape {
     Shape::Polygon(p) => p,
-    _ => return Err("Expected Polygon shape".into()),
+    _ => return Err(CustomError("Expected Polygon shape".to_string())),
   };
 
   let rings: Vec<Vec<Vec<f64>>> = polygon
@@ -124,12 +167,13 @@ fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> 
       "properties": {}
   });
 
-  serde_json::to_string(&feature).map_err(Into::into)
+  serde_json::to_string(&feature).map_err(CustomError::from)
 }
-fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
+
+fn process_polyline(shape: &Shape) -> Result<String, CustomError> {
   let polyline = match shape {
     Shape::Polyline(p) => p,
-    _ => return Err("Expected Polyline shape".into()),
+    _ => return Err(CustomError("Expected Polyline shape".to_string())),
   };
 
   let parts: Vec<Vec<Vec<f64>>> = polyline
@@ -147,13 +191,13 @@ fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>>
       "properties": null
   });
 
-  serde_json::to_string(&feature).map_err(Into::into)
+  serde_json::to_string(&feature).map_err(CustomError::from)
 }
 
-fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
+fn process_point(shape: &Shape) -> Result<String, CustomError> {
   let point = match shape {
     Shape::Point(p) => p,
-    _ => return Err("Expected Point shape".into()),
+    _ => return Err(CustomError("Expected Point shape".to_string())),
   };
 
   let feature = json!({
@@ -165,11 +209,11 @@ fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
       "properties": null
   });
 
-  serde_json::to_string(&feature).map_err(Into::into)
+  serde_json::to_string(&feature).map_err(CustomError::from)
 }
 
 fn remove_non_numeric(text: &String) -> String {
   let re = Regex::new(r"\D").unwrap();
   let result = re.replace_all(text, String::new());
-  result.into_owned() // Convert Cow<'_, str> to String
+  result.into_owned()
 }
