@@ -8,18 +8,18 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let base_path = Path::new("data/polygon/polygon");
+  let base_path = Path::new("data/point/point");
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
   let mut shp_reader = Reader::from_path(shp_path.clone())?;
-  let mut all_count: usize = 0;
+  let mut all_count: u64 = 0;
   {
     let mut shp_reader = Reader::from_path(shp_path)?;
     let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
     let shp_count = &shp_reader.iter_shapes_and_records().count();
     let dbf_count = &dbf_reader.iter_records().count();
 
-    all_count = shp_count.clone();
+    all_count = shp_count.clone() as u64;
 
     if shp_count != dbf_count {
       println!("Warning: SHP data ({} records) and DBF data ({} records) have different numbers of elements.", shp_count, dbf_count);
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut features = Vec::new();
 
   //ステータスバー
-  let pb = ProgressBar::new(all_count as u64);
+  let pb = ProgressBar::new(all_count);
   pb.set_style(
     ProgressStyle::default_bar()
       .template("{spinner:.green} [{bar:40.cyan/blue}] {msg}")? //記号や文字の色を変えるよ！
@@ -54,24 +54,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add properties from the DBF record
     if let Some(props) = &mut feature.properties {
       for (field, value) in record.into_iter() {
-        let re_1 = Regex::new(&format!("^{}", "Numeric")).unwrap();
-        let re_2 = Regex::new(&format!("^{}", "Numeric")).unwrap();
-        if re_1.is_match(&value.to_string()) {
-          props.insert(
-            field.to_string(),
-            json!(remove_non_numeric(&value.to_string())),
-          );
-        } else if re_2.is_match(&value.to_string()) {
-          props.insert(
-            field.to_string(),
-            json!(remove_non_numeric(&value.to_string())),
-          );
+        let re_numeric = Regex::new(r"^Numeric").unwrap();
+        let re_character = Regex::new(r#"^Character\(Some\("(.+)"\)\)"#).unwrap();
+
+        if re_numeric.is_match(&value.to_string()) {
+          let numeric_string = remove_non_numeric(&value.to_string());
+          if let Ok(number) = numeric_string.parse::<f64>() {
+            props.insert(field.to_string(), json!(number));
+          } else {
+            props.insert(field.to_string(), json!(numeric_string));
+          }
+        } else if let Some(captures) = re_character.captures(&value.to_string()) {
+          if let Some(inner_value) = captures.get(1) {
+            props.insert(field.to_string(), json!(inner_value.as_str()));
+          } else {
+            props.insert(field.to_string(), json!(value.to_string()));
+          }
         } else {
           props.insert(field.to_string(), json!(value.to_string()));
         }
       }
     }
-
     features.push(feature);
 
     pb.inc(1);
