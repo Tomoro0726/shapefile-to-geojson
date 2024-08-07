@@ -1,4 +1,5 @@
 use geojson::{Feature, FeatureCollection, Geometry, Value as GeoJsonValue};
+use regex::Regex;
 use serde_json::{json, Map};
 use shapefile::{Point, PolygonRing, Reader, Shape};
 use std::fs::File;
@@ -84,11 +85,10 @@ fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> 
     rings.push(coordinates);
   }
 
-  let mut properties: Map<String, serde_json::Value> = Map::new();
-  properties.insert("name".to_string(), json!("My Feature"));
-  properties.insert("population".to_string(), json!(12345));
+  let properties: Map<String, serde_json::Value> = Map::new();
 
   let geometry = Geometry::new(GeoJsonValue::Polygon(rings));
+
   let feature = Feature {
     bbox: None,
     geometry: Some(geometry),
