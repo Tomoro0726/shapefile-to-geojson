@@ -36,7 +36,7 @@ impl From<std::io::Error> for CustomError {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-  let base_path = Path::new("data/polygon/polygon");
+  let base_path = Path::new("data/point/point");
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
   let mut shp_reader = Reader::from_path(shp_path.clone())?;
@@ -96,7 +96,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
           for (field, value) in record.into_iter() {
             let value_string = value.to_string();
-            props.insert(field.to_string(), json!(value_string));
+            let value_json = match value_string.as_str() {
+              "Numeric(None)" => json!(""),
+              "Character(None)" => json!(null),
+              _ => {
+                if let Some(caps) = re_numeric.captures(&value_string) {
+                  // Numeric の場合
+                  let number_str = caps.get(1).map_or("", |m| m.as_str());
+                  if let Ok(number) = number_str.parse::<f64>() {
+                    json!(number)
+                  } else {
+                    // 数値パースに失敗した場合の処理
+                    eprintln!("Failed to parse numeric value: {}", value_string);
+                    json!(value_string)
+                  }
+                } else if let Some(caps) = re_character.captures(&value_string) {
+                  // Character の場合
+                  let character_str = caps.get(1).map_or("", |m| m.as_str());
+                  json!(character_str)
+                } else {
+                  // その他の場合
+                  json!(value_string)
+                }
+              }
+            };
+            props.insert(field.to_string(), value_json);
           }
         }
 
@@ -174,7 +198,7 @@ fn process_polyline(shape: &Shape) -> Result<String, CustomError> {
           "type": "MultiLineString",
           "coordinates": parts
       },
-      "properties": null
+      "properties": {}
   });
 
   serde_json::to_string(&feature).map_err(CustomError::from)
@@ -192,7 +216,7 @@ fn process_point(shape: &Shape) -> Result<String, CustomError> {
           "type": "Point",
           "coordinates": [point.x, point.y]
       },
-      "properties": null
+      "properties": {}
   });
 
   serde_json::to_string(&feature).map_err(CustomError::from)
