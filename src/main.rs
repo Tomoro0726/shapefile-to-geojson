@@ -91,26 +91,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut feature: Feature = serde_json::from_str(&geojson_string)?;
 
         if let Some(props) = &mut feature.properties {
-          for (field, value) in record.into_iter() {
-            let re_numeric = Regex::new(r"^Numeric").unwrap();
-            let re_character = Regex::new(r#"^Character\(Some\("(.+)"\)\)"#).unwrap();
+          let re_numeric = Regex::new(r"Numeric\(Some\(([0-9]+(\.[0-9]+)?)\)\)").unwrap();
+          let re_character = Regex::new(r#"^Character\(Some\("(.+)"\)\)"#).unwrap();
 
-            if re_numeric.is_match(&value.to_string()) {
-              let numeric_string = remove_non_numeric(&value.to_string());
-              if let Ok(number) = numeric_string.parse::<f64>() {
-                props.insert(field.to_string(), json!(number));
-              } else {
-                props.insert(field.to_string(), json!(numeric_string));
-              }
-            } else if let Some(captures) = re_character.captures(&value.to_string()) {
-              if let Some(inner_value) = captures.get(1) {
-                props.insert(field.to_string(), json!(inner_value.as_str()));
-              } else {
-                props.insert(field.to_string(), json!(value.to_string()));
-              }
-            } else {
-              props.insert(field.to_string(), json!(value.to_string()));
-            }
+          for (field, value) in record.into_iter() {
+            let value_string = value.to_string();
+            props.insert(field.to_string(), json!(value_string));
           }
         }
 
@@ -210,10 +196,4 @@ fn process_point(shape: &Shape) -> Result<String, CustomError> {
   });
 
   serde_json::to_string(&feature).map_err(CustomError::from)
-}
-
-fn remove_non_numeric(text: &String) -> String {
-  let re = Regex::new(r"\D").unwrap();
-  let result = re.replace_all(text, String::new());
-  result.into_owned()
 }
