@@ -1,6 +1,8 @@
-use geojson::{Feature, Geometry, Value as GeoJsonValue};
+use geojson::{Feature, FeatureCollection, Geometry, Value as GeoJsonValue};
 use serde_json::{json, Map};
 use shapefile::{Point, PolygonRing, Reader, Shape};
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,9 +23,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       shp_count
     );
   }
-  //iterを定義
-  let mut shp_iter = shp_reader.iter_shapes_and_records();
-  let mut dbf_iter = dbf_reader.iter_records();
+
+  let mut features = Vec::new();
+
+  for shape_record in shp_reader.iter_shapes_and_records() {
+    let (shape, record) = shape_record?;
+    let geojson_string = match shape {
+      Shape::Polygon(_) => process_polygon(&shape)?,
+      Shape::Polyline(_) => process_polyline(&shape)?,
+      Shape::Point(_) => process_point(&shape)?,
+      _ => continue, // Skip unsupported shapes
+    };
+
+    let mut feature: Feature = serde_json::from_str(&geojson_string)?;
+
+    // Add properties from the DBF record
+    if let Some(props) = &mut feature.properties {
+      for (field, value) in record.into_iter() {
+        props.insert(field.to_string(), json!(value.to_string()));
+      }
+    }
+
+    features.push(feature);
+  }
+
+  let feature_collection = FeatureCollection {
+    bbox: None,
+    features,
+    foreign_members: None,
+  };
+
+  let geojson_output = serde_json::to_string_pretty(&feature_collection)?;
+
+  // Write the GeoJSON to a file
+  let mut file = File::create("output.geojson")?;
+  file.write_all(geojson_output.as_bytes())?;
+
+  println!("GeoJSON file has been created: output.geojson");
+
   Ok(())
 }
 
