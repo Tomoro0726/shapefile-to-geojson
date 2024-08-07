@@ -1,4 +1,5 @@
 use geojson::{Feature, FeatureCollection, Geometry, Value as GeoJsonValue};
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use serde_json::{json, Map};
 use shapefile::{Point, PolygonRing, Reader, Shape};
@@ -11,13 +12,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
   let mut shp_reader = Reader::from_path(shp_path.clone())?;
-  let mut dbf_reader = dbase::Reader::from_path(dbf_path.clone())?;
-
+  let mut all_count: usize = 0;
   {
     let mut shp_reader = Reader::from_path(shp_path)?;
     let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
     let shp_count = &shp_reader.iter_shapes_and_records().count();
     let dbf_count = &dbf_reader.iter_records().count();
+
+    all_count = shp_count.clone();
 
     if shp_count != dbf_count {
       println!("Warning: SHP data ({} records) and DBF data ({} records) have different numbers of elements.", shp_count, dbf_count);
@@ -30,6 +32,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
   let mut features = Vec::new();
 
+  //ステータスバー
+  let pb = ProgressBar::new(all_count as u64);
+  pb.set_style(
+    ProgressStyle::default_bar()
+      .template("{spinner:.green} [{bar:40.cyan/blue}] {msg}")? //記号や文字の色を変えるよ！
+      .progress_chars("█▓▒░"),
+  ); //好みに変更してね！2つ以上の文字を入れてね
+  pb.set_message("進行中...");
   for shape_record in shp_reader.iter_shapes_and_records() {
     let (shape, record) = shape_record?;
     let geojson_string = match shape {
@@ -44,12 +54,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add properties from the DBF record
     if let Some(props) = &mut feature.properties {
       for (field, value) in record.into_iter() {
-        props.insert(field.to_string(), json!(value.to_string()));
+        let re_1 = Regex::new(&format!("^{}", "Numeric")).unwrap();
+        let re_2 = Regex::new(&format!("^{}", "Numeric")).unwrap();
+        if re_1.is_match(&value.to_string()) {
+          props.insert(
+            field.to_string(),
+            json!(remove_non_numeric(&value.to_string())),
+          );
+        } else if re_2.is_match(&value.to_string()) {
+          props.insert(
+            field.to_string(),
+            json!(remove_non_numeric(&value.to_string())),
+          );
+        } else {
+          props.insert(field.to_string(), json!(value.to_string()));
+        }
       }
     }
 
     features.push(feature);
+
+    pb.inc(1);
   }
+  println!("完了");
+  pb.finish_with_message("完了");
 
   let feature_collection = FeatureCollection {
     bbox: None,
@@ -109,17 +137,6 @@ fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>>
     _ => return Err("Expected Polyline shape".into()),
   };
 
-  println!("Processing Polyline:");
-  println!("Number of parts: {}", polyline.parts().len());
-  println!(
-    "Total number of points: {}",
-    polyline
-      .parts()
-      .iter()
-      .map(|part| part.len())
-      .sum::<usize>()
-  );
-
   let mut parts = Vec::new();
   for part in polyline.parts() {
     let coordinates: Vec<Vec<f64>> = part
@@ -151,9 +168,6 @@ fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
     _ => return Err("Expected Point shape".into()),
   };
 
-  println!("Processing Point:");
-  println!("Coordinates: ({}, {})", point.x, point.y);
-
   let geometry = Geometry::new(GeoJsonValue::Point(vec![point.x, point.y]));
 
   let feature = Feature {
@@ -167,4 +181,10 @@ fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
   let geojson_string = serde_json::to_string_pretty(&feature)?;
 
   Ok(geojson_string)
+}
+
+fn remove_non_numeric(text: &String) -> String {
+  let re = Regex::new(r"\D").unwrap();
+  let result = re.replace_all(text, String::new());
+  result.into_owned() // Convert Cow<'_, str> to String
 }
