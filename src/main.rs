@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let base_path = Path::new("data/point/point");
+  let base_path = Path::new("data/line/line");
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
   let mut shp_reader = Reader::from_path(shp_path.clone())?;
@@ -100,90 +100,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  //println!("process_polygonが実行されました。");
   let polygon = match shape {
     Shape::Polygon(p) => p,
     _ => return Err("Expected Polygon shape".into()),
   };
-  let mut rings = Vec::new();
-  for ring in polygon.rings() {
-    let coordinates: Vec<Vec<f64>> = match ring {
-      PolygonRing::Outer(points) | PolygonRing::Inner(points) => points
-        .iter()
-        .map(|point: &Point| vec![point.x, point.y])
-        .collect(),
-    };
-    rings.push(coordinates);
-  }
 
-  let properties: Map<String, serde_json::Value> = Map::new();
+  let rings: Vec<Vec<Vec<f64>>> = polygon
+    .rings()
+    .iter()
+    .map(|ring| match ring {
+      PolygonRing::Outer(points) | PolygonRing::Inner(points) => {
+        points.iter().map(|point| vec![point.x, point.y]).collect()
+      }
+    })
+    .collect();
 
-  let geometry = Geometry::new(GeoJsonValue::Polygon(rings));
+  let feature = json!({
+      "type": "Feature",
+      "geometry": {
+          "type": "Polygon",
+          "coordinates": rings
+      },
+      "properties": {}
+  });
 
-  let feature = Feature {
-    bbox: None,
-    geometry: Some(geometry),
-    properties: Some(properties),
-    id: None,
-    foreign_members: None,
-  };
-
-  let geojson_string = serde_json::to_string_pretty(&feature)?;
-
-  Ok(geojson_string)
+  serde_json::to_string(&feature).map_err(Into::into)
 }
-
 fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  //println!("process_polylineが実行されました。");
   let polyline = match shape {
     Shape::Polyline(p) => p,
     _ => return Err("Expected Polyline shape".into()),
   };
 
-  let mut parts = Vec::new();
-  for part in polyline.parts() {
-    let coordinates: Vec<Vec<f64>> = part
-      .iter()
-      .map(|point: &Point| vec![point.x, point.y])
-      .collect();
-    parts.push(coordinates);
-  }
+  let parts: Vec<Vec<Vec<f64>>> = polyline
+    .parts()
+    .iter()
+    .map(|part| part.iter().map(|point| vec![point.x, point.y]).collect())
+    .collect();
 
-  let geometry = Geometry::new(GeoJsonValue::MultiLineString(parts));
+  let feature = json!({
+      "type": "Feature",
+      "geometry": {
+          "type": "MultiLineString",
+          "coordinates": parts
+      },
+      "properties": null
+  });
 
-  let feature = Feature {
-    bbox: None,
-    geometry: Some(geometry),
-    id: None,
-    properties: None,
-    foreign_members: None,
-  };
-
-  let geojson_string = serde_json::to_string_pretty(&feature)?;
-
-  Ok(geojson_string)
+  serde_json::to_string(&feature).map_err(Into::into)
 }
 
 fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  //println!("process_pointが実行されました。");
   let point = match shape {
     Shape::Point(p) => p,
     _ => return Err("Expected Point shape".into()),
   };
 
-  let geometry = Geometry::new(GeoJsonValue::Point(vec![point.x, point.y]));
+  let feature = json!({
+      "type": "Feature",
+      "geometry": {
+          "type": "Point",
+          "coordinates": [point.x, point.y]
+      },
+      "properties": null
+  });
 
-  let feature = Feature {
-    bbox: None,
-    geometry: Some(geometry),
-    properties: None,
-    id: None,
-    foreign_members: None,
-  };
-
-  let geojson_string = serde_json::to_string_pretty(&feature)?;
-
-  Ok(geojson_string)
+  serde_json::to_string(&feature).map_err(Into::into)
 }
 
 fn remove_non_numeric(text: &String) -> String {
