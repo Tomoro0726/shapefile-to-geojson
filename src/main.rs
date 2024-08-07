@@ -6,12 +6,27 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let base_path = Path::new("data/line/line");
+  let base_path = Path::new("data/polygon/polygon");
   let shp_path = base_path.with_extension("shp");
   let dbf_path = base_path.with_extension("dbf");
-  let mut shp_reader = Reader::from_path(shp_path)?;
-  let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
+  let mut shp_reader = Reader::from_path(shp_path.clone())?;
+  let mut dbf_reader = dbase::Reader::from_path(dbf_path.clone())?;
 
+  {
+    let mut shp_reader = Reader::from_path(shp_path)?;
+    let mut dbf_reader = dbase::Reader::from_path(dbf_path)?;
+    let shp_count = &shp_reader.iter_shapes_and_records().count();
+    let dbf_count = &dbf_reader.iter_records().count();
+
+    if shp_count != dbf_count {
+      println!("Warning: SHP data ({} records) and DBF data ({} records) have different numbers of elements.", shp_count, dbf_count);
+    } else {
+      println!(
+        "SHP and DBF data have the same number of elements: {} records",
+        shp_count
+      );
+    }
+  }
   let mut features = Vec::new();
 
   for shape_record in shp_reader.iter_shapes_and_records() {
@@ -53,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  println!("process_polygonが実行されました。");
+  //println!("process_polygonが実行されました。");
   let polygon = match shape {
     Shape::Polygon(p) => p,
     _ => return Err("Expected Polygon shape".into()),
@@ -88,7 +103,7 @@ fn process_polygon(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> 
 }
 
 fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  println!("process_polylineが実行されました。");
+  //println!("process_polylineが実行されました。");
   let polyline = match shape {
     Shape::Polyline(p) => p,
     _ => return Err("Expected Polyline shape".into()),
@@ -130,7 +145,7 @@ fn process_polyline(shape: &Shape) -> Result<String, Box<dyn std::error::Error>>
 }
 
 fn process_point(shape: &Shape) -> Result<String, Box<dyn std::error::Error>> {
-  println!("process_pointが実行されました。");
+  //println!("process_pointが実行されました。");
   let point = match shape {
     Shape::Point(p) => p,
     _ => return Err("Expected Point shape".into()),
