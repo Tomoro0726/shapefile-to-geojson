@@ -1,17 +1,21 @@
 [package]
 name = "shapefile-to-geojson"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
+authors = ["Tomoro Saito <s.tomoro0726@gmail.com>"]
+license = "MIT"
+description = "shapefile convert to geojson"
+repository = "https://github.com/Tomoro0726/shapefile-to-geojson"
+
+
 
 [dependencies]
-shapefile = {version = "0.6.0", features = ["geo-types"]}
-geojson = "0.24.0"
-geo-types = "0.7.13"
-serde_json = "1.0"
-dbase = "0.5.0"
-regex = "1.7.0"
-indicatif = "0.17.3"
-rayon = "1.10"
-tokio = { version = "1.39.2", features = ["full"] }
 futures = "0.3"
-num_cpus = "1.16.0"
+geojson = "0.24"
+indicatif = "0.17"
+regex = "1.5"
+serde_json = "1.0"
+shapefile = "0.5"
+tokio = { version = "1.0", features = ["full"] }
+dbase = "0.3"
+num_cpus = "1.13"
