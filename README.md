@@ -2,6 +2,12 @@
 
 This is a Rust library that provides a function to convert a shapefile (a common geospatial data format) to a GeoJSON file. GeoJSON is a lightweight, text-based format for representing geographic data, which is useful for a variety of mapping and data visualization applications.
 
+## Example
+
+This is a sample repository of how to use this library.
+
+https://github.com/Tomoro0726/shapefile-to-geojson-ex
+
 ## Features
 
 - Supports converting Polygon, Polyline, and Point geometries from Shapefile to GeoJSON
