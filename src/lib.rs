@@ -61,8 +61,8 @@ pub async fn convert_shapefile_to_geojson(
 
   tasks.for_each(|_| async {}).await;
 
-  println!("完了");
-  pb.finish_with_message("完了");
+  println!("completed");
+  pb.finish_with_message("completed");
 
   let feature_collection = FeatureCollection {
     bbox: None,
@@ -109,7 +109,7 @@ fn create_progress_bar(total: u64) -> ProgressBar {
       .unwrap()
       .progress_chars("█▓▒░"),
   );
-  pb.set_message("進行中...");
+  pb.set_message("Processing...");
   pb
 }
 
